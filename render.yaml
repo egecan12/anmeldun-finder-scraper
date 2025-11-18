@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: anmeldung-finder
+    env: node
+    region: frankfurt # Almanya'ya yakın
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CHECK_INTERVAL
+        value: 20000
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: false
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/google-chrome-stable
+
