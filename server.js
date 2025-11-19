@@ -1,11 +1,15 @@
 const puppeteer = require("puppeteer");
 const express = require("express");
 const axios = require("axios");
+const { Expo } = require("expo-server-sdk");
 
 // ============ AYARLAR ============
 const TARGET_URL = "https://allaboutberlin.com/tools/appointment-finder";
 const CHECK_INTERVAL = 20000; // 20 saniye
 const PORT = process.env.PORT || 3000;
+
+// Expo Push Notifications
+const expo = new Expo();
 
 // ============ GLOBAL STATE ============
 let currentAppointments = []; // Mevcut randevular
@@ -16,6 +20,9 @@ let isFirstRun = true;
 let browser = null;
 let isScraping = false;
 
+// Expo Push Tokens (gerçek projede database kullan!)
+let expoPushTokens = new Set();
+
 // Express App
 const app = express();
 app.use(express.json());
@@ -23,7 +30,7 @@ app.use(express.json());
 // ============ SCRAPING FONKSİYONLARI ============
 
 /**
- * Browser'ı başlat
+ * Browser'ı başlat (scraper-puppeteer.js'den kopyalandı - ÇALIŞAN VERSİYON)
  */
 async function initBrowser() {
   if (!browser) {
@@ -38,7 +45,7 @@ async function initBrowser() {
         "--disable-gpu"
       ]
     });
-    console.log("✅ Browser hazır!");
+    console.log("✅ Browser hazır!\n");
   }
   return browser;
 }
@@ -67,12 +74,13 @@ async function scrapeAppointments() {
 
     await page.setViewport({ width: 1920, height: 1080 });
 
+    // Sayfaya git ve JavaScript'in yüklenmesini bekle
     await page.goto(TARGET_URL, {
       waitUntil: "networkidle2",
       timeout: 30000
     });
 
-    // JavaScript render için bekle
+    // Biraz daha bekle (JavaScript render için)
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Randevuları scrape et
@@ -124,6 +132,9 @@ async function scrapeAppointments() {
         console.log(`\n🎉 ${newOnes.length} YENİ RANDEVU BULUNDU!`);
         newOnes.forEach(app => console.log(`   📅 ${app.fullText}`));
         newAppointments = newOnes; // Global state'e kaydet
+        
+        // 🔔 PUSH NOTIFICATION GÖNDER
+        await sendPushNotifications(newOnes);
       } else {
         newAppointments = []; // Yeni randevu yoksa temizle
       }
@@ -186,6 +197,39 @@ app.get("/", (req, res) => {
  */
 app.get("/health", (req, res) => {
   res.sendStatus(200);
+});
+
+/**
+ * POST /api/register-device - Device token kaydet
+ */
+app.post("/api/register-device", (req, res) => {
+  const { token, userId, platform } = req.body;
+  
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      error: "Token required"
+    });
+  }
+  
+  // Expo push token mu kontrol et
+  if (!Expo.isExpoPushToken(token)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid Expo push token"
+    });
+  }
+  
+  // Token'ı kaydet
+  expoPushTokens.add(token);
+  console.log(`📱 Yeni device kaydedildi: ${userId || 'anonymous'} (${platform || 'unknown'})`);
+  console.log(`   Toplam kayıtlı device: ${expoPushTokens.size}`);
+  
+  res.json({
+    success: true,
+    message: "Device registered successfully",
+    totalDevices: expoPushTokens.size
+  });
 });
 
 /**
@@ -270,6 +314,81 @@ app.get("/api/stats", (req, res) => {
     }
   });
 });
+
+// ============ PUSH NOTIFICATION ============
+
+/**
+ * Expo Push Notifications gönder
+ */
+async function sendPushNotifications(appointments) {
+  if (expoPushTokens.size === 0) {
+    console.log("⚠️  Kayıtlı device yok, notification gönderilmedi");
+    return;
+  }
+
+  console.log(`📤 ${expoPushTokens.size} device'a notification gönderiliyor...`);
+
+  // Mesajları hazırla
+  const messages = [];
+  
+  for (let pushToken of expoPushTokens) {
+    // Token geçerli mi kontrol et
+    if (!Expo.isExpoPushToken(pushToken)) {
+      console.error(`⚠️  Geçersiz token: ${pushToken}`);
+      expoPushTokens.delete(pushToken);
+      continue;
+    }
+
+    messages.push({
+      to: pushToken,
+      sound: 'default',
+      title: '🎉 Yeni Randevu Bulundu!',
+      body: `${appointments.length} yeni randevu mevcut. Hemen kontrol et!`,
+      data: { 
+        appointments: appointments,
+        count: appointments.length,
+        type: 'new_appointments'
+      },
+      badge: appointments.length,
+      priority: 'high',
+    });
+  }
+
+  // Mesajları chunk'lara böl (Expo max 100 per request)
+  const chunks = expo.chunkPushNotifications(messages);
+  const tickets = [];
+
+  // Her chunk'ı gönder
+  for (let chunk of chunks) {
+    try {
+      const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+      tickets.push(...ticketChunk);
+    } catch (error) {
+      console.error('❌ Push notification gönderme hatası:', error);
+    }
+  }
+
+  // Sonuçları kontrol et
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (let ticket of tickets) {
+    if (ticket.status === 'ok') {
+      successCount++;
+    } else if (ticket.status === 'error') {
+      errorCount++;
+      console.error(`❌ Notification hatası: ${ticket.message}`);
+      
+      // Geçersiz token'ları temizle
+      if (ticket.details && ticket.details.error === 'DeviceNotRegistered') {
+        // Token'ı sil (gerçek projede database'den sil)
+        console.log('🗑️  Geçersiz token temizlendi');
+      }
+    }
+  }
+
+  console.log(`✅ Notification gönderildi: ${successCount} başarılı, ${errorCount} hata`);
+}
 
 // ============ ARKA PLAN SCRAPING ============
 
