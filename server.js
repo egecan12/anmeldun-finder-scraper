@@ -6,6 +6,7 @@ const { Expo } = require("expo-server-sdk");
 // ============ AYARLAR ============
 const TARGET_URL = "https://allaboutberlin.com/tools/appointment-finder";
 const CHECK_INTERVAL = 20000; // 20 saniye
+const STALE_DATA_THRESHOLD = 45000; // 45 saniye - Eğer veri bundan eskiyse, zorla scrape yap!
 const PORT = process.env.PORT || 3000;
 
 // Expo Push Notifications
@@ -237,9 +238,15 @@ app.post("/api/register-device", (req, res) => {
  */
 app.get("/api/appointments", async (req, res) => {
   try {
-    // Eğer cache boşsa, hemen scrape yap
-    if (currentAppointments.length === 0 && !isScraping) {
-      console.log("📦 Cache boş, scraping yapılıyor...");
+    // Akıllı Güncelleme (Smart Refresh) 🧠
+    // Eğer son scrape üzerinden 45 saniyeden fazla geçtiyse, veri bayat demektir.
+    // Bu durumda arka planın çalışmasını bekleme, hemen kendin scrape yap!
+    const now = new Date().getTime();
+    const lastScrapeTime = lastScrapedAt ? new Date(lastScrapedAt).getTime() : 0;
+    const timeDiff = now - lastScrapeTime;
+
+    if ((currentAppointments.length === 0 && !isScraping) || (timeDiff > STALE_DATA_THRESHOLD && !isScraping)) {
+      console.log(`⚠️  Veri bayat (${Math.floor(timeDiff / 1000)}s), manuel refresh yapılıyor...`);
       await scrapeAppointments();
     }
 

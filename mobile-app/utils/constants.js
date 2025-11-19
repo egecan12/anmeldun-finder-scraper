@@ -1,13 +1,17 @@
 // API Configuration
-// IMPORTANT: Render'a deploy ettikten sonra bu URL'i değiştir!
+// Production URL: https://anmeldun-finder-api.onrender.com
 
 // Local IP'ni bul: Terminal'de `ipconfig getifaddr en0` (Mac) veya `ipconfig` (Windows)
 // Senin IP'n: 192.168.178.99
-const LOCAL_IP = '192.168.178.99'; // ← Otomatik bulundu!
+const LOCAL_IP = '192.168.178.99';
 
-export const API_BASE_URL = __DEV__ 
-  ? `http://${LOCAL_IP}:3000`  // Local development - WiFi üzerinden
-  : 'https://your-app.onrender.com';  // Production - BUNU DEĞİŞTİR!
+// Her zaman production URL kullan (Render'da deploy edilmiş backend)
+export const API_BASE_URL = 'https://anmeldun-finder-api.onrender.com';
+
+// Local test için (gerekirse yorumu kaldır):
+// export const API_BASE_URL = __DEV__ 
+//   ? `http://${LOCAL_IP}:3000`
+//   : 'https://anmeldun-finder-api.onrender.com';
 
 // API Endpoints
 export const API_ENDPOINTS = {
