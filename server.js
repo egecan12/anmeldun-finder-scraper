@@ -8,7 +8,7 @@ const admin = require("firebase-admin"); // Firebase Admin SDK
 const TARGET_URL = "https://allaboutberlin.com/tools/appointment-finder";
 const CHECK_INTERVAL = 20000; // 20 saniye
 const STALE_DATA_THRESHOLD = 45000; // 45 saniye
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Expo Push Notifications
 const expo = new Expo();
@@ -116,51 +116,89 @@ async function scrapeAppointments() {
     // Randevuları scrape et
     const appointments = await page.evaluate(() => {
       const results = [];
-      const links = document.querySelectorAll('a[href="/out/appointment-anmeldung"]');
-      const now = new Date(); // Şu anki tarih
+      // Selector'ı genişlet: tam eşleşme yerine 'içeren' kullan
+      const links = document.querySelectorAll('a[href*="/out/appointment-anmeldung"]');
+      const now = new Date();
       
-      // Bugünün gece yarısı (Tarih karşılaştırması için)
+      // Berlin saatiyle "Bugün"ü bulmaya çalışalım (yaklaşık olarak)
+      // Basitlik adına server saati + offset veya direkt server tarihini kullanıyoruz.
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const monthNames = ["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+
+      function formatDate(date) {
+        return `${monthNames[date.getMonth()]} ${date.getDate()}`;
+      }
 
       links.forEach((link) => {
-        const hasCalendarIcon = link.querySelector('i.icon.calendar');
+        // İkon kontrolünü kaldırdık, çünkü bazen ikon olmayabilir
+        // Link metni ve yapısına güvenelim
+        const strongElement = link.querySelector("strong");
+        const timeElement = link.querySelector("time");
 
-        if (hasCalendarIcon) {
-          const strongElement = link.querySelector("strong");
-          const timeElement = link.querySelector("time");
+        let dateStr = strongElement ? strongElement.textContent.trim() : "";
+        let timeStr = timeElement ? timeElement.textContent.trim() : "";
 
-          const dateStr = strongElement ? strongElement.textContent.trim() : "";
-          const timeStr = timeElement ? timeElement.textContent.trim() : "";
+        // Eğer tarih veya saat "Today" / "Tomorrow" ise düzelt
+        let appointmentDate = null;
 
-          if (dateStr && timeStr && !dateStr.includes("{{") && !timeStr.includes("{{")) {
+        // 1. Tarih kısmında "Today" / "Tomorrow" var mı?
+        if (dateStr.toLowerCase().includes("today")) {
+          dateStr = formatDate(today);
+          appointmentDate = today;
+        } else if (dateStr.toLowerCase().includes("tomorrow")) {
+          dateStr = formatDate(tomorrow);
+          appointmentDate = tomorrow;
+        }
+
+        // 2. Saat kısmında "Today" / "Tomorrow" var mı? (Bazen buraya yazıyorlar)
+        if (timeStr.toLowerCase().includes("tomorrow")) {
+           // Eğer tarih belirtilmişse (örn: "November 19") ama saat "Tomorrow" ise
+           // Bu durumda randevu tarihi aslında yarındır diyebiliriz, 
+           // AMA genelde "Tomorrow" yazısı date kısmında olur.
+           // Yine de timeStr "Tomorrow" ise ve dateStr geçmişse, belki de bu yarındır?
+           // Şimdilik timeStr'yi saat olarak bırakalım, ama dateStr parse edilince bakarız.
+        }
+
+        if (dateStr && !dateStr.includes("{{")) {
             
-            // Tarih Filtresi: Geçmiş randevuları ele 🧹
-            // Örnek dateStr: "November 19"
-            // Bu string'i Date objesine çevirmemiz lazım.
-            // Basit bir parser yapıyoruz:
-            try {
-               const currentYear = new Date().getFullYear();
-               const appointmentDate = new Date(`${dateStr}, ${currentYear}`);
-               
-               // Eğer randevu tarihi bugünden önceyse, GEÇERSİZDİR.
-               // Ancak dikkat: Yıl sonundaysak (Aralık) ve randevu Ocak ise, bir sonraki yıl demektir.
-               // Bu basit mantık şimdilik yeterli, çünkü "November 19" bugünden (Nov 20) eski.
-               
-               if (appointmentDate < today) {
-                 // console.log("Eski randevu atlandı:", dateStr);
-                 return; // forEach'in bu iterasyonunu atla
-               }
-            } catch (e) {
-               // Tarih parse edilemezse güvenli davran ve ekle
-            }
-
-            results.push({
-              date: dateStr,
-              time: timeStr,
-              fullText: `${dateStr} - ${timeStr}`,
-              href: link.getAttribute("href")
-            });
+          // Tarih Filtresi ve Parsing
+          if (!appointmentDate) {
+             try {
+                const currentYear = new Date().getFullYear();
+                // "November 19" -> Date object
+                appointmentDate = new Date(`${dateStr}, ${currentYear}`);
+                
+                // Yıl atlama kontrolü 📅
+                // Eğer randevu ayı şu anki aydan küçükse (Örn: Biz Kasım'dayız, Randevu Ocak'ta)
+                // Bu randevu önümüzdeki yıla aittir.
+                if (appointmentDate.getMonth() < now.getMonth()) {
+                    appointmentDate.setFullYear(currentYear + 1);
+                }
+             } catch (e) {
+                // Parse edilemedi, null bırak
+             }
           }
+
+          // Geçmiş randevuları ele
+          if (appointmentDate) {
+             // Sadece bugünden ÖNCEKİ (dün ve öncesi) randevuları ele
+             // Bugünün randevuları kalsın.
+             if (appointmentDate < today) {
+               return; 
+             }
+          }
+
+          results.push({
+            date: dateStr,
+            time: timeStr,
+            fullText: `${dateStr} - ${timeStr}`,
+            href: link.getAttribute("href")
+          });
         }
       });
 
