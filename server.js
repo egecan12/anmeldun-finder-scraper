@@ -2,27 +2,56 @@ const puppeteer = require("puppeteer");
 const express = require("express");
 const axios = require("axios");
 const { Expo } = require("expo-server-sdk");
+const admin = require("firebase-admin"); // Firebase Admin SDK
 
 // ============ AYARLAR ============
 const TARGET_URL = "https://allaboutberlin.com/tools/appointment-finder";
 const CHECK_INTERVAL = 20000; // 20 saniye
-const STALE_DATA_THRESHOLD = 45000; // 45 saniye - Eğer veri bundan eskiyse, zorla scrape yap!
+const STALE_DATA_THRESHOLD = 45000; // 45 saniye
 const PORT = process.env.PORT || 3000;
 
 // Expo Push Notifications
 const expo = new Expo();
 
+// Firebase Admin SDK Setup
+try {
+  // Render'da ENV variable'dan oku, local'de dosyadan oku
+  let serviceAccount;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } else {
+    // Local development için (eğer dosya varsa)
+    try {
+      serviceAccount = require("./firebase-service-account.json");
+    } catch (e) {
+      console.log("⚠️  firebase-service-account.json bulunamadı, FCM devre dışı.");
+    }
+  }
+
+  if (serviceAccount) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("🔥 Firebase Admin SDK başlatıldı!");
+  }
+} catch (error) {
+  console.error("❌ Firebase başlatma hatası:", error.message);
+}
+
 // ============ GLOBAL STATE ============
-let currentAppointments = []; // Mevcut randevular
-let previousAppointmentKeys = new Set(); // Önceki randevu key'leri
-let newAppointments = []; // Yeni bulunan randevular
+let currentAppointments = []; 
+let previousAppointmentKeys = new Set(); 
+let newAppointments = []; 
 let lastScrapedAt = null;
 let isFirstRun = true;
 let browser = null;
 let isScraping = false;
 
-// Expo Push Tokens (gerçek projede database kullan!)
-let expoPushTokens = new Set();
+// Push Tokens (Platform bazlı sakla)
+let pushTokens = {
+  expo: new Set(),
+  fcm: new Set()
+};
 
 // Express App
 const app = express();
@@ -88,6 +117,10 @@ async function scrapeAppointments() {
     const appointments = await page.evaluate(() => {
       const results = [];
       const links = document.querySelectorAll('a[href="/out/appointment-anmeldung"]');
+      const now = new Date(); // Şu anki tarih
+      
+      // Bugünün gece yarısı (Tarih karşılaştırması için)
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
       links.forEach((link) => {
         const hasCalendarIcon = link.querySelector('i.icon.calendar');
@@ -96,14 +129,35 @@ async function scrapeAppointments() {
           const strongElement = link.querySelector("strong");
           const timeElement = link.querySelector("time");
 
-          const date = strongElement ? strongElement.textContent.trim() : "";
-          const time = timeElement ? timeElement.textContent.trim() : "";
+          const dateStr = strongElement ? strongElement.textContent.trim() : "";
+          const timeStr = timeElement ? timeElement.textContent.trim() : "";
 
-          if (date && time && !date.includes("{{") && !time.includes("{{")) {
+          if (dateStr && timeStr && !dateStr.includes("{{") && !timeStr.includes("{{")) {
+            
+            // Tarih Filtresi: Geçmiş randevuları ele 🧹
+            // Örnek dateStr: "November 19"
+            // Bu string'i Date objesine çevirmemiz lazım.
+            // Basit bir parser yapıyoruz:
+            try {
+               const currentYear = new Date().getFullYear();
+               const appointmentDate = new Date(`${dateStr}, ${currentYear}`);
+               
+               // Eğer randevu tarihi bugünden önceyse, GEÇERSİZDİR.
+               // Ancak dikkat: Yıl sonundaysak (Aralık) ve randevu Ocak ise, bir sonraki yıl demektir.
+               // Bu basit mantık şimdilik yeterli, çünkü "November 19" bugünden (Nov 20) eski.
+               
+               if (appointmentDate < today) {
+                 // console.log("Eski randevu atlandı:", dateStr);
+                 return; // forEach'in bu iterasyonunu atla
+               }
+            } catch (e) {
+               // Tarih parse edilemezse güvenli davran ve ekle
+            }
+
             results.push({
-              date: date,
-              time: time,
-              fullText: `${date} - ${time}`,
+              date: dateStr,
+              time: timeStr,
+              fullText: `${dateStr} - ${timeStr}`,
               href: link.getAttribute("href")
             });
           }
@@ -114,6 +168,8 @@ async function scrapeAppointments() {
     });
 
     await page.close();
+    if (browser) await browser.close(); // Browser'ı kapat! 🔒
+    browser = null; // Referansı temizle
 
     console.log(`📊 ${appointments.length} randevu bulundu.`);
 
@@ -207,29 +263,33 @@ app.post("/api/register-device", (req, res) => {
   const { token, userId, platform } = req.body;
   
   if (!token) {
-    return res.status(400).json({
-      success: false,
-      error: "Token required"
-    });
+    return res.status(400).json({ success: false, error: "Token required" });
+  }
+
+  // Platforma göre kaydet
+  if (platform === 'android-native') {
+    pushTokens.fcm.add(token);
+    console.log(`🤖 Yeni Android Native cihaz: ${userId || 'anon'}`);
+  } else {
+    // Varsayılan olarak Expo kabul et
+    if (!Expo.isExpoPushToken(token)) {
+      // Eğer Expo token değilse ve platform belirtilmemişse, belki FCM'dir diye dene
+      // Ama şimdilik katı kural: Expo ise Expo, değilse hata
+      if (!platform) {
+         return res.status(400).json({ success: false, error: "Invalid Expo push token" });
+      }
+    }
+    pushTokens.expo.add(token);
+    console.log(`📱 Yeni Expo cihaz: ${userId || 'anon'}`);
   }
   
-  // Expo push token mu kontrol et
-  if (!Expo.isExpoPushToken(token)) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid Expo push token"
-    });
-  }
-  
-  // Token'ı kaydet
-  expoPushTokens.add(token);
-  console.log(`📱 Yeni device kaydedildi: ${userId || 'anonymous'} (${platform || 'unknown'})`);
-  console.log(`   Toplam kayıtlı device: ${expoPushTokens.size}`);
+  const totalDevices = pushTokens.expo.size + pushTokens.fcm.size;
+  console.log(`   Toplam cihaz: ${totalDevices} (Expo: ${pushTokens.expo.size}, FCM: ${pushTokens.fcm.size})`);
   
   res.json({
     success: true,
     message: "Device registered successfully",
-    totalDevices: expoPushTokens.size
+    totalDevices: totalDevices
   });
 });
 
@@ -328,73 +388,69 @@ app.get("/api/stats", (req, res) => {
  * Expo Push Notifications gönder
  */
 async function sendPushNotifications(appointments) {
-  if (expoPushTokens.size === 0) {
-    console.log("⚠️  Kayıtlı device yok, notification gönderilmedi");
-    return;
-  }
+  const messageBody = `${appointments.length} yeni randevu mevcut. Hemen kontrol et!`;
+  const messageTitle = '🎉 Yeni Randevu Bulundu!';
 
-  console.log(`📤 ${expoPushTokens.size} device'a notification gönderiliyor...`);
-
-  // Mesajları hazırla
-  const messages = [];
-  
-  for (let pushToken of expoPushTokens) {
-    // Token geçerli mi kontrol et
-    if (!Expo.isExpoPushToken(pushToken)) {
-      console.error(`⚠️  Geçersiz token: ${pushToken}`);
-      expoPushTokens.delete(pushToken);
-      continue;
+  // 1. EXPO BİLDİRİMLERİ
+  if (pushTokens.expo.size > 0) {
+    console.log(`📤 Expo: ${pushTokens.expo.size} cihaza gönderiliyor...`);
+    const messages = [];
+    for (let pushToken of pushTokens.expo) {
+      if (!Expo.isExpoPushToken(pushToken)) continue;
+      messages.push({
+        to: pushToken,
+        sound: 'default',
+        title: messageTitle,
+        body: messageBody,
+        data: { appointments, count: appointments.length },
+        badge: appointments.length,
+      });
     }
-
-    messages.push({
-      to: pushToken,
-      sound: 'default',
-      title: '🎉 Yeni Randevu Bulundu!',
-      body: `${appointments.length} yeni randevu mevcut. Hemen kontrol et!`,
-      data: { 
-        appointments: appointments,
-        count: appointments.length,
-        type: 'new_appointments'
-      },
-      badge: appointments.length,
-      priority: 'high',
-    });
-  }
-
-  // Mesajları chunk'lara böl (Expo max 100 per request)
-  const chunks = expo.chunkPushNotifications(messages);
-  const tickets = [];
-
-  // Her chunk'ı gönder
-  for (let chunk of chunks) {
-    try {
-      const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-      tickets.push(...ticketChunk);
-    } catch (error) {
-      console.error('❌ Push notification gönderme hatası:', error);
-    }
-  }
-
-  // Sonuçları kontrol et
-  let successCount = 0;
-  let errorCount = 0;
-
-  for (let ticket of tickets) {
-    if (ticket.status === 'ok') {
-      successCount++;
-    } else if (ticket.status === 'error') {
-      errorCount++;
-      console.error(`❌ Notification hatası: ${ticket.message}`);
-      
-      // Geçersiz token'ları temizle
-      if (ticket.details && ticket.details.error === 'DeviceNotRegistered') {
-        // Token'ı sil (gerçek projede database'den sil)
-        console.log('🗑️  Geçersiz token temizlendi');
+    const chunks = expo.chunkPushNotifications(messages);
+    for (let chunk of chunks) {
+      try {
+        await expo.sendPushNotificationsAsync(chunk);
+      } catch (error) {
+        console.error('❌ Expo Error:', error);
       }
     }
   }
 
-  console.log(`✅ Notification gönderildi: ${successCount} başarılı, ${errorCount} hata`);
+  // 2. FIREBASE (FCM) BİLDİRİMLERİ
+  if (pushTokens.fcm.size > 0 && admin.apps.length > 0) {
+    console.log(`🔥 FCM: ${pushTokens.fcm.size} cihaza gönderiliyor...`);
+    
+    // Multicast message (toplu gönderim)
+    const message = {
+      notification: {
+        title: messageTitle,
+        body: messageBody
+      },
+      data: {
+        type: 'new_appointments',
+        count: appointments.length.toString()
+      },
+      tokens: Array.from(pushTokens.fcm)
+    };
+
+    try {
+      const response = await admin.messaging().sendEachForMulticast(message);
+      console.log(`✅ FCM Sonuç: ${response.successCount} başarılı, ${response.failureCount} hata`);
+      
+      if (response.failureCount > 0) {
+        const failedTokens = [];
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            failedTokens.push(message.tokens[idx]);
+          }
+        });
+        console.log('🗑️  Hatalı FCM tokenları temizleniyor:', failedTokens.length);
+        failedTokens.forEach(t => pushTokens.fcm.delete(t));
+      }
+    } catch (error) {
+      console.error('❌ FCM Gönderim Hatası:', error);
+    }
+  }
 }
 
 // ============ ARKA PLAN SCRAPING ============

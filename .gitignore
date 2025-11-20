@@ -8,6 +8,11 @@ npm-debug.log*
 dist/
 build/
 
+# Secrets
+firebase-service-account.json
+google-services.json
+**/google-services.json
+
 # Test files
 *test*.js
 *test*.sh
@@ -17,4 +22,3 @@ build/
 # Puppeteer cache
 .cache/
 .puppeteer/
-
