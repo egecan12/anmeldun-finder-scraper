@@ -339,6 +339,9 @@ app.get("/api/appointments", async (req, res) => {
     // Akıllı Güncelleme (Smart Refresh) 🧠
     // Eğer son scrape üzerinden 45 saniyeden fazla geçtiyse, veri bayat demektir.
     // Bu durumda arka planın çalışmasını bekleme, hemen kendin scrape yap!
+    
+    // İSTEK ÜZERİNE DEVRE DIŞI BIRAKILDI: Sadece manual /refresh ile güncelleme yapılacak.
+    /*
     const now = new Date().getTime();
     const lastScrapeTime = lastScrapedAt ? new Date(lastScrapedAt).getTime() : 0;
     const timeDiff = now - lastScrapeTime;
@@ -347,6 +350,7 @@ app.get("/api/appointments", async (req, res) => {
       console.log(`⚠️  Veri bayat (${Math.floor(timeDiff / 1000)}s), manuel refresh yapılıyor...`);
       await scrapeAppointments();
     }
+    */
 
     res.json({
       success: true,
@@ -497,16 +501,19 @@ async function sendPushNotifications(appointments) {
  * Otomatik scraping başlat
  */
 async function startBackgroundScraping() {
-  console.log("🚀 Arka plan scraping başlatılıyor...");
-  console.log(`⏱️  Her ${CHECK_INTERVAL / 1000} saniyede bir kontrol edilecek...\n`);
-
-  // İlk scrape'i hemen yap
+  console.log("🚀 Başlangıç scraping işlemi yapılıyor...");
+  // İlk scrape'i hemen yap ki hafıza boş kalmasın
   await scrapeAppointments();
 
-  // Belirlenen aralıkta tekrarla
+  // Otomatik arkaplan taraması İPTAL EDİLDİ.
+  // Artık sadece /api/appointments/refresh endpoint'i çağrıldığında tarama yapılacak.
+  
+  /*
+  console.log(`⏱️  Her ${CHECK_INTERVAL / 1000} saniyede bir kontrol edilecek...\n`);
   setInterval(async () => {
     await scrapeAppointments();
   }, CHECK_INTERVAL);
+  */
 }
 
 // ============ RENDER KEEP-ALIVE ============
