@@ -30,9 +30,17 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import android.util.Log;
 import androidx.annotation.NonNull;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
+    private static final int REQUEST_CODE_NOTIFICATIONS = 101;
+
     private RecyclerView recyclerView;
     private AppointmentAdapter adapter;
     private SwipeRefreshLayout swipeRefreshLayout;
@@ -59,6 +67,9 @@ public class MainActivity extends AppCompatActivity {
         // Network Servisi
         apiService = ApiClient.getApiService();
 
+        // Bildirim İzni İste (Android 13+)
+        checkNotificationPermission();
+
         // FCM Token al ve sunucuya gönder
         setupFirebaseMessaging();
 
@@ -69,6 +80,18 @@ public class MainActivity extends AppCompatActivity {
         swipeRefreshLayout.setOnRefreshListener(() -> {
             fetchAppointments(true);
         });
+    }
+
+    private void checkNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED) {
+                
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        REQUEST_CODE_NOTIFICATIONS);
+            }
+        }
     }
 
     private void setupFirebaseMessaging() {
