@@ -8,18 +8,18 @@
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#F5F5F5">
+        android:background="@color/background">
 
         <!-- Toolbar / Başlık -->
         <TextView
             android:id="@+id/headerTitle"
             android:layout_width="match_parent"
             android:layout_height="60dp"
-            android:background="#FFFFFF"
+            android:background="@color/white"
             android:elevation="4dp"
             android:gravity="center"
-            android:text="Anmeldung Finder"
-            android:textColor="#212121"
+            android:text="@string/header_title"
+            android:textColor="@color/text_primary"
             android:textSize="20sp"
             android:textStyle="bold"
             app:layout_constraintTop_toTopOf="parent" />

@@ -11,7 +11,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:background="@color/surface">
 
         <!-- Tarih -->
         <TextView
@@ -19,7 +20,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="November 19"
-            android:textColor="#4CAF50"
+            android:textColor="@color/text_primary"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -30,20 +31,20 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:text="Tomorrow"
-            android:textColor="#757575"
+            android:textColor="@color/text_secondary"
             android:textSize="14sp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:background="#E3F2FD"
+            android:background="@color/accent"
             android:paddingStart="8dp"
             android:paddingTop="4dp"
             android:paddingEnd="8dp"
             android:paddingBottom="4dp"
             android:text="@string/available_badge"
-            android:textColor="#2196F3"
+            android:textColor="@color/primary_dark"
             android:textSize="12sp"
             android:textStyle="bold" />
 

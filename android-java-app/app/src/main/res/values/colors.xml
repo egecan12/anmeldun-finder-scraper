@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
+    <!-- Dark Theme Palette -->
+    <!-- 17313E (Dark Blue) - Background -->
+    <!-- 415E72 (Slate Blue) - Surface/Cards -->
+    <!-- FF9800 (Orange) - Primary/Text/Accent -->
     
-    <color name="ic_launcher_background">#4CAF50</color> <!-- Yeşil arka plan -->
+    <color name="primary">#FF9800</color>
+    <color name="primary_dark">#F57C00</color>
+    <color name="accent">#FF9800</color>
+    
+    <color name="background">#17313E</color>
+    <color name="surface">#415E72</color>
+    
+    <color name="text_primary">#FF9800</color>
+    <color name="text_secondary">#B0BEC5</color>
+    
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    
+    <color name="ic_launcher_background">#17313E</color>
 </resources>

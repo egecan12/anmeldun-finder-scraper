@@ -197,7 +197,8 @@ async function scrapeAppointments() {
             date: dateStr,
             time: timeStr,
             fullText: `${dateStr} - ${timeStr}`,
-            href: link.getAttribute("href")
+            // Hatalı link yerine doğrudan çalışan Anmeldung takvim linkini veriyoruz
+            href: "https://service.berlin.de/terminvereinbarung/termin/tag.php?termin=1&dienstleister=122210&anliegen[]=120686&herkunft=1"
           });
         }
       });
@@ -430,8 +431,8 @@ app.get("/api/stats", (req, res) => {
  * Expo Push Notifications gönder
  */
 async function sendPushNotifications(appointments) {
-  const messageBody = `${appointments.length} yeni randevu mevcut. Hemen kontrol et!`;
-  const messageTitle = '🎉 Yeni Randevu Bulundu!';
+  const messageBody = `${appointments.length} new appointments available. Check now!`;
+  const messageTitle = '🎉 New Appointments Found!';
 
   // 1. EXPO BİLDİRİMLERİ
   if (pushTokens.expo.size > 0) {
