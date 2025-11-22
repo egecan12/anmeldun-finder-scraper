@@ -1,5 +1,7 @@
 package com.anmeldungfinder.app.adapter;
 
+import android.content.Intent;
+import android.net.Uri;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,6 +35,20 @@ public class AppointmentAdapter extends RecyclerView.Adapter<AppointmentAdapter.
         Appointment appointment = appointments.get(position);
         holder.textDate.setText(appointment.getDate());
         holder.textTime.setText(appointment.getTime());
+
+        // Tıklama özelliği: Linki aç 🔗
+        holder.itemView.setOnClickListener(v -> {
+            String url = appointment.getHref();
+            if (url != null && !url.isEmpty()) {
+                // Eğer URL tam değilse (relative path ise) domain ekle
+                if (!url.startsWith("http")) {
+                    url = "https://allaboutberlin.com" + url;
+                }
+                
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                v.getContext().startActivity(intent);
+            }
+        });
     }
 
     @Override
