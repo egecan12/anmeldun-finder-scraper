@@ -197,8 +197,8 @@ async function scrapeAppointments() {
             date: dateStr,
             time: timeStr,
             fullText: `${dateStr} - ${timeStr}`,
-            // Hatalı link yerine doğrudan çalışan Anmeldung takvim linkini veriyoruz
-            href: "https://service.berlin.de/terminvereinbarung/termin/tag.php?termin=1&dienstleister=122210&anliegen[]=120686&herkunft=1"
+            // Hatalı link yerine doğrudan hizmet sayfasına yönlendiriyoruz (Session/Forbidden hatasını aşmak için)
+            href: "https://service.berlin.de/dienstleistung/120686/"
           });
         }
       });
